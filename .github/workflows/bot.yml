@@ -1,4 +1,4 @@
-name: Dubai bot — daily search
+name: Dubai bot daily search
 
 on:
   schedule:
