@@ -1,0 +1,64 @@
+"use client";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { GlobalSettings } from "@/lib/types";
+
+const TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/deals":     "Deals",
+  "/searches":  "Búsquedas",
+  "/settings":  "Configuración",
+  "/team":      "Equipo",
+};
+
+export function Topbar() {
+  const path = usePathname() ?? "";
+  const router = useRouter();
+  const title = Object.entries(TITLES).find(([k]) => path.startsWith(k))?.[1] ?? "";
+  const [settings, setSettings] = useState<GlobalSettings | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    supabase
+      .from("dubai_settings")
+      .select("value")
+      .eq("key", "global")
+      .single()
+      .then((r) => alive && r.data && setSettings(r.data.value as GlobalSettings));
+    supabase.auth.getUser().then(({ data }) => alive && setEmail(data.user?.email ?? null));
+    return () => { alive = false; };
+  }, []);
+
+  async function logout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
+
+  return (
+    <header className="glass h-14 sticky top-0 z-20 flex items-center px-8">
+      <h1 className="text-base font-medium text-text-primary">{title}</h1>
+      <div className="ml-auto flex items-center gap-6 text-xs text-text-secondary">
+        <div className="flex items-center gap-2">
+          <span className="pulse-dot" />
+          <span>Bot activo</span>
+        </div>
+        {settings && (
+          <div className="font-data text-text-tertiary">
+            Próx. búsqueda · {settings.hora_busqueda}
+          </div>
+        )}
+        {email && (
+          <div className="flex items-center gap-3 pl-6 border-l border-border">
+            <span className="text-text-tertiary truncate max-w-[160px]">{email}</span>
+            <button onClick={logout} className="text-text-tertiary hover:text-gold-light">
+              Salir
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}

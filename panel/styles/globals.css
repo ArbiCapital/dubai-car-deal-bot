@@ -1,0 +1,157 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Fondos */
+  --bg-base:        #080910;
+  --bg-surface:     #0E1018;
+  --bg-elevated:    #141720;
+  --bg-input:       #1A1E2A;
+
+  /* Gold */
+  --gold:           #C9973A;
+  --gold-light:     #E8B84B;
+  --gold-dim:       rgba(201, 151, 58, 0.15);
+  --gold-border:    rgba(201, 151, 58, 0.3);
+
+  /* Texto */
+  --text-primary:   rgba(255, 255, 255, 0.90);
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-tertiary:  rgba(255, 255, 255, 0.30);
+  --text-muted:     rgba(255, 255, 255, 0.18);
+
+  /* Bordes */
+  --border:         rgba(255, 255, 255, 0.08);
+  --border-strong:  rgba(255, 255, 255, 0.15);
+  --border-gold:    rgba(201, 151, 58, 0.30);
+
+  /* Semánticos */
+  --success:        #2D9E6B;
+  --success-dim:    rgba(45, 158, 107, 0.15);
+  --warning:        #E8A020;
+  --warning-dim:    rgba(232, 160, 32, 0.15);
+  --danger:         #D94040;
+  --danger-dim:     rgba(217, 64, 64, 0.15);
+  --info:           #3B82F6;
+  --info-dim:       rgba(59, 130, 246, 0.15);
+
+  --font-ui:    'Inter', system-ui, sans-serif;
+  --font-data:  'JetBrains Mono', ui-monospace, monospace;
+}
+
+html, body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 60% 40% at 50% -10%,
+    rgba(201, 151, 58, 0.08) 0%,
+    transparent 70%
+  );
+  z-index: 0;
+}
+
+* { box-sizing: border-box; }
+
+/* Botones */
+.btn-primary {
+  background: linear-gradient(135deg, #C9973A, #E8B84B);
+  color: #080910;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text-primary);
+}
+
+/* Inputs */
+.input {
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 9px 12px;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201,151,58,0.10);
+}
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Card */
+.card {
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+/* Glass top bar */
+.glass {
+  background: rgba(14, 16, 24, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 0.5px solid var(--border);
+}
+
+/* Pulse dot */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(45,158,107,0.6);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(45,158,107,0.6); }
+  70%  { box-shadow: 0 0 0 10px rgba(45,158,107,0); }
+  100% { box-shadow: 0 0 0 0 rgba(45,158,107,0); }
+}
+
+/* Scrollbar sutil */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
