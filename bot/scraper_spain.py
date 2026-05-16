@@ -1,20 +1,32 @@
-"""Scrapea coches.net para sacar mediana de mercado España."""
+"""Saca stats de mercado España desde AutoScout24.es.
+
+Estrategia: parse __NEXT_DATA__ via HTTP (sin Playwright). coches.net
+da 403, autocasion y milanuncios también. AutoScout24 funciona limpio.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
-import random
 import re
 import statistics
-import time
 from typing import Any
 from urllib.parse import quote_plus
 
-from playwright.sync_api import sync_playwright
+import httpx
 
 from config_loader import get_cached_price, save_cached_price
 
 log = logging.getLogger(__name__)
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+NEXT_DATA_RE = re.compile(
+    r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.+?)</script>', re.S
+)
 
 
 def _slug(s: str) -> str:
@@ -25,13 +37,47 @@ def _cache_key(marca: str, modelo: str, ano: int) -> str:
     return f"{_slug(marca)}_{_slug(modelo)}_{ano}"
 
 
-def _coches_net_url(marca: str, modelo: str, ano: int) -> str:
+def _autoscout_url(marca: str, modelo: str, ano: int) -> str:
+    marca_s = quote_plus(marca.lower().replace(" ", "-"))
+    modelo_s = quote_plus(modelo.lower().replace(" ", "-"))
     return (
-        "https://www.coches.net/segunda-mano/"
-        f"?MakeIds[]={quote_plus(marca)}"
-        f"&ModelIds[]={quote_plus(modelo)}"
-        f"&YearFrom={ano}&YearTo={ano}"
+        f"https://www.autoscout24.es/lst/{marca_s}/{modelo_s}"
+        f"?atype=C&cy=E&fregfrom={ano}&fregto={ano}&sort=price&desc=0"
     )
+
+
+def _fetch_listings(marca: str, modelo: str, ano: int) -> list[dict[str, Any]]:
+    url = _autoscout_url(marca, modelo, ano)
+    log.info("AutoScout24 URL: %s", url)
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "es-ES,es;q=0.9",
+    }
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as c:
+            r = c.get(url)
+            if r.status_code != 200:
+                log.warning("AutoScout24 HTTP %s", r.status_code)
+                return []
+            html = r.text
+    except Exception as e:
+        log.warning("AutoScout24 fetch error: %s", e)
+        return []
+
+    m = NEXT_DATA_RE.search(html)
+    if not m:
+        log.warning("AutoScout24: no __NEXT_DATA__")
+        return []
+    try:
+        d = json.loads(m.group(1))
+    except Exception:
+        log.warning("AutoScout24: __NEXT_DATA__ JSON parse failed")
+        return []
+    listings = d.get("props", {}).get("pageProps", {}).get("listings") or []
+    if not isinstance(listings, list):
+        return []
+    return listings
 
 
 def fetch_spain_stats(marca: str, modelo: str, ano: int) -> dict[str, Any] | None:
@@ -44,56 +90,34 @@ def fetch_spain_stats(marca: str, modelo: str, ano: int) -> dict[str, Any] | Non
         log.info("Cache hit Spain price %s", key)
         return cached
 
-    url = _coches_net_url(marca, modelo, ano)
-    log.info("coches.net URL: %s", url)
-    precios: list[int] = []
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-            ctx = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1366, "height": 900},
-                locale="es-ES",
-            )
-            page = ctx.new_page()
+    listings = _fetch_listings(marca, modelo, ano)
+    prices: list[int] = []
+    for l in listings:
+        if not isinstance(l, dict):
+            continue
+        p = l.get("price") or {}
+        if not isinstance(p, dict):
+            continue
+        formatted = p.get("priceFormatted") or ""
+        match = re.search(r"([\d.]+)", formatted.replace(",", "."))
+        if match:
             try:
-                page.goto(url, timeout=30000, wait_until="domcontentloaded")
-                page.wait_for_load_state("networkidle", timeout=15000)
+                prices.append(int(match.group(1).replace(".", "")))
             except Exception:
                 pass
 
-            for _ in range(2):
-                page.mouse.wheel(0, 2500)
-                time.sleep(random.uniform(0.6, 1.2))
-
-            html = page.content()
-            ctx.close()
-            browser.close()
-
-        for m in re.finditer(r"(\d{1,3}(?:\.\d{3})+)\s*€", html):
-            try:
-                precios.append(int(m.group(1).replace(".", "")))
-            except Exception:
-                continue
-    except Exception as e:
-        log.exception("coches.net error: %s", e)
-        return None
-
-    precios = [p for p in precios if 3000 <= p <= 300000]
-    if len(precios) < 3:
-        log.warning("Sólo %d precios para %s — sin stats", len(precios), key)
+    prices = [p for p in prices if 3000 <= p <= 300000]
+    if len(prices) < 3:
+        log.warning("Solo %d precios para %s — sin stats", len(prices), key)
         return None
 
     stats = {
-        "mediana": int(statistics.median(precios)),
-        "minimo": int(min(precios)),
-        "maximo": int(max(precios)),
-        "media": int(statistics.mean(precios)),
-        "num_anuncios": len(precios),
-        "fuente": "coches.net",
+        "mediana": int(statistics.median(prices)),
+        "minimo": int(min(prices)),
+        "maximo": int(max(prices)),
+        "media": int(statistics.mean(prices)),
+        "num_anuncios": len(prices),
+        "fuente": "autoscout24.es",
     }
     try:
         save_cached_price(key, stats, hours=24)
