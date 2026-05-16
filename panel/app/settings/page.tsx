@@ -13,7 +13,8 @@ export default function SettingsPage() {
   const [costes, setCostes] = useState<CostesSettings | null>(null);
   const [tg, setTg] = useState<TelegramSettings | null>(null);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [refreshingFx, setRefreshingFx] = useState(false);
+  const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -25,17 +26,46 @@ export default function SettingsPage() {
     })();
   }, []);
 
+  async function refreshFx() {
+    if (!global) return;
+    setRefreshingFx(true);
+    try {
+      // Frankfurter es CORS-friendly
+      let rate: number | null = null;
+      const r1 = await fetch("https://api.frankfurter.app/latest?from=AED&to=EUR").then((r) => r.json());
+      if (r1?.rates?.EUR) rate = r1.rates.EUR;
+      if (!rate) {
+        const r2 = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR").then((r) => r.json());
+        if (r2?.rates?.EUR) rate = r2.rates.EUR / 3.6725;
+      }
+      if (!rate) throw new Error("No se pudo obtener el tipo");
+      setGlobal({ ...global, aed_to_eur: Number(rate.toFixed(6)) });
+      setToast({ kind: "ok", msg: `Tipo actualizado: 1 AED = ${rate.toFixed(4)} €` });
+      setTimeout(() => setToast(null), 4000);
+    } catch (e: any) {
+      setToast({ kind: "err", msg: `Error refrescando FX: ${e.message ?? e}` });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setRefreshingFx(false);
+    }
+  }
+
   async function guardar() {
     if (!global || !costes || !tg) return;
     setSaving(true);
-    await Promise.all([
+    const results = await Promise.all([
       supabase.from("dubai_settings").update({ value: global }).eq("key", "global"),
       supabase.from("dubai_settings").update({ value: costes }).eq("key", "costes"),
       supabase.from("dubai_settings").update({ value: tg }).eq("key", "telegram"),
     ]);
     setSaving(false);
-    setToast("Guardado. Aplica en la siguiente ejecución del bot.");
-    setTimeout(() => setToast(null), 4000);
+    const err = results.find((r) => r.error)?.error;
+    if (err) {
+      setToast({ kind: "err", msg: `Error guardando: ${err.message}. ¿Estás logueado?` });
+    } else {
+      setToast({ kind: "ok", msg: "Guardado. Aplica en la siguiente ejecución del bot." });
+    }
+    setTimeout(() => setToast(null), 5000);
   }
 
   if (!global || !costes || !tg) {
@@ -54,9 +84,23 @@ export default function SettingsPage() {
             <Input type="number" step="0.01" value={global.descuento_venta_pct}
               onChange={(e) => setGlobal({ ...global, descuento_venta_pct: +e.target.value })} />
           </Field>
-          <Field label="AED → EUR">
-            <Input type="number" step="0.001" value={global.aed_to_eur}
-              onChange={(e) => setGlobal({ ...global, aed_to_eur: +e.target.value })} />
+          <Field label="AED → EUR" hint="El bot lo refresca solo (ECB/Frankfurter) en cada ejecución">
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                step="0.000001"
+                value={global.aed_to_eur}
+                onChange={(e) => setGlobal({ ...global, aed_to_eur: +e.target.value })}
+              />
+              <button
+                type="button"
+                onClick={refreshFx}
+                disabled={refreshingFx}
+                className="btn-secondary !px-3 !py-1 text-xs whitespace-nowrap"
+              >
+                {refreshingFx ? "…" : "Hoy"}
+              </button>
+            </div>
           </Field>
           <Field label="Hora búsqueda diaria">
             <Input value={global.hora_busqueda}
@@ -125,7 +169,16 @@ export default function SettingsPage() {
 
       <div className="sticky bottom-4 mt-8 flex justify-end gap-3">
         {toast && (
-          <div className="card !py-2 !px-4 text-sm text-success border-[rgba(45,158,107,0.3)]">{toast}</div>
+          <div
+            className={
+              "card !py-2 !px-4 text-sm " +
+              (toast.kind === "ok"
+                ? "text-success border-[rgba(45,158,107,0.3)]"
+                : "text-danger border-[rgba(217,64,64,0.3)]")
+            }
+          >
+            {toast.msg}
+          </div>
         )}
         <Button onClick={guardar} disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</Button>
       </div>

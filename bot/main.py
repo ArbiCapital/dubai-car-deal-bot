@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from calculator import evaluar_deal
 from config_loader import (
+    _client,
     get_active_searches,
     get_costes,
     get_global_settings,
@@ -22,6 +23,7 @@ from config_loader import (
     mark_seen,
     save_deal,
 )
+from fx import fetch_aed_to_eur
 from scraper_dubai import scrape_search
 from scraper_spain import fetch_spain_stats
 from telegram import Telegram, formatear_mensaje
@@ -118,9 +120,26 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
     return stats
 
 
+def _refresh_fx_rate(settings: dict[str, Any]) -> dict[str, Any]:
+    """Intenta refrescar AED→EUR via Frankfurter. Persiste en settings si éxito."""
+    rate = fetch_aed_to_eur()
+    if not rate:
+        log.info("FX: no se pudo refrescar, uso valor en settings: %s", settings.get("aed_to_eur"))
+        return settings
+    new_settings = dict(settings)
+    new_settings["aed_to_eur"] = round(rate, 6)
+    try:
+        _client().table("dubai_settings").update({"value": new_settings}).eq("key", "global").execute()
+        log.info("FX actualizado: 1 AED = %s EUR (persistido)", new_settings["aed_to_eur"])
+    except Exception:
+        log.exception("FX update fail (uso valor en memoria)")
+    return new_settings
+
+
 def job() -> None:
     log.info("=== JOB START %s ===", datetime.now().isoformat())
     settings = get_global_settings()
+    settings = _refresh_fx_rate(settings)
     costes = get_costes()
     tg_cfg = get_telegram_config()
     tg = Telegram(

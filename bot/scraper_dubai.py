@@ -82,8 +82,25 @@ def _extract_detail(hit: dict, slug_target: str) -> Any:
     return None
 
 
+SPEC_LABEL_TO_KEY = {
+    "gcc specs": "gcc",
+    "american specs": "american",
+    "canadian specs": "canadian",
+    "european specs": "european",
+    "japanese specs": "japanese",
+    "other specs": "other",
+}
+
+
+def _normalize_spec(label: str | None) -> str | None:
+    if not label:
+        return None
+    return SPEC_LABEL_TO_KEY.get(label.strip().lower())
+
+
 def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[dict]:
     out: list[dict] = []
+    wanted_specs: set[str] = {s for s in (search.get("especificaciones") or []) if s}
     for h in hits:
         try:
             url_field = h.get("absolute_url")
@@ -108,6 +125,12 @@ def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[
 
             year = _extract_detail(h, "year")
             km = _extract_detail(h, "kilometers")
+            spec_raw = _extract_detail(h, "regional_specs")
+            spec_key = _normalize_spec(spec_raw)
+
+            # Filtro por specs configuradas
+            if wanted_specs and (spec_key is None or spec_key not in wanted_specs):
+                continue
 
             out.append({
                 "listing_id": f"dubizzle:{h.get('id') or h.get('uuid') or h.get('objectID')}",
@@ -118,6 +141,7 @@ def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[
                 "km": int(km) if km else None,
                 "url": detail_url,
                 "foto_url": foto,
+                "regional_specs": spec_key,
             })
         except Exception as e:
             log.debug("Dubizzle hit skip: %s", e)

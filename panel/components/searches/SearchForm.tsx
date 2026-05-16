@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Input";
 import { Toggle } from "@/components/ui/Toggle";
-import { Search } from "@/lib/types";
+import { ALL_SPECS, SPEC_LABEL, Search, SpecKey } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 
 interface Props {
@@ -23,10 +23,12 @@ export function SearchForm({ initial, onClose, onSaved }: Props) {
     precio_min_aed: initial?.precio_min_aed ?? 50000,
     precio_max_aed: initial?.precio_max_aed ?? 300000,
     km_max: initial?.km_max ?? 150000,
-    margen_minimo_override: initial?.margen_minimo_override ?? null as number | null,
+    margen_minimo_override: initial?.margen_minimo_override ?? (null as number | null),
+    especificaciones: (initial?.especificaciones ?? []) as SpecKey[],
     activa: initial?.activa ?? true,
   });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -34,15 +36,28 @@ export function SearchForm({ initial, onClose, onSaved }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  function toggleSpec(s: SpecKey) {
+    setForm((f) => ({
+      ...f,
+      especificaciones: f.especificaciones.includes(s)
+        ? f.especificaciones.filter((x) => x !== s)
+        : [...f.especificaciones, s],
+    }));
+  }
+
   async function save() {
     setSaving(true);
+    setErr(null);
     const payload = { ...form };
-    if (initial) {
-      await supabase.from("dubai_searches").update(payload).eq("id", initial.id);
-    } else {
-      await supabase.from("dubai_searches").insert(payload);
-    }
+    const op = initial
+      ? supabase.from("dubai_searches").update(payload).eq("id", initial.id)
+      : supabase.from("dubai_searches").insert(payload);
+    const { error } = await op;
     setSaving(false);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
     onSaved();
     onClose();
   }
@@ -77,11 +92,46 @@ export function SearchForm({ initial, onClose, onSaved }: Props) {
               placeholder="—"
             />
           </Field>
+
+          <div className="col-span-2">
+            <div className="text-xs text-text-tertiary uppercase tracking-wider mb-2">
+              Especificaciones regionales
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {ALL_SPECS.map((s) => {
+                const on = form.especificaciones.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggleSpec(s)}
+                    className={
+                      "px-3 py-1.5 text-xs rounded-full border transition-colors " +
+                      (on
+                        ? "bg-gold-dim text-gold-light border-gold-border"
+                        : "bg-bg-input text-text-secondary border-border hover:border-border-strong")
+                    }
+                  >
+                    {SPEC_LABEL[s]}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="text-xs text-text-tertiary mt-2">
+              Vacío = acepta todas las especificaciones.
+            </div>
+          </div>
+
           <div className="col-span-2 flex items-center gap-3 pt-2">
             <Toggle checked={form.activa} onChange={(v) => setForm({ ...form, activa: v })} ariaLabel="Activa" />
             <span className="text-sm text-text-secondary">Activa</span>
           </div>
         </div>
+        {err && (
+          <div className="px-6 pb-2 text-xs text-danger">
+            Error: {err}. ¿Estás logueado?
+          </div>
+        )}
         <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
           <Button onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>

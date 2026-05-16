@@ -1,5 +1,17 @@
 export type Clasificacion = "excepcional" | "muy_bueno" | "bueno";
 
+export type SpecKey = "gcc" | "american" | "canadian" | "european" | "japanese";
+
+export const SPEC_LABEL: Record<SpecKey, string> = {
+  gcc: "GCC",
+  american: "American",
+  canadian: "Canadian",
+  european: "European",
+  japanese: "Japanese",
+};
+
+export const ALL_SPECS: SpecKey[] = ["gcc", "american", "canadian", "european", "japanese"];
+
 export interface Search {
   id: string;
   nombre: string;
@@ -11,6 +23,7 @@ export interface Search {
   precio_max_aed: number;
   km_max: number;
   margen_minimo_override: number | null;
+  especificaciones: SpecKey[] | null;
   activa: boolean;
   created_at: string;
   updated_at: string;
