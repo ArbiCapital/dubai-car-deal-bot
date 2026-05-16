@@ -38,7 +38,7 @@ def _slug(s: str) -> str:
 # =========================================================
 # Dubizzle — Playwright + __NEXT_DATA__
 # =========================================================
-def _dubizzle_url(search: dict[str, Any]) -> str:
+def _dubizzle_url(search: dict[str, Any], page: int = 1) -> str:
     marca = _slug(search["marca"])
     modelo = _slug(search["modelo"])
     base = f"https://uae.dubizzle.com/motors/used-cars/{marca}/{modelo}/"
@@ -49,6 +49,8 @@ def _dubizzle_url(search: dict[str, Any]) -> str:
         f"&year__lte={search['ano_max']}"
         f"&kilometers__lte={search['km_max']}"
     )
+    if page > 1:
+        params += f"&page={page}"
     return base + params
 
 
@@ -149,10 +151,45 @@ def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[
     return out
 
 
-def scrape_dubizzle(search: dict[str, Any]) -> list[dict[str, Any]]:
-    url = _dubizzle_url(search)
-    log.info("Dubizzle URL: %s", url)
-    html = None
+def _dubizzle_fetch_page(page_obj, url: str) -> tuple[list[dict], int]:
+    """Carga una URL en el browser ya abierto y devuelve (hits, total_count)."""
+    try:
+        page_obj.goto(url, timeout=45000, wait_until="domcontentloaded")
+        try:
+            page_obj.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+        html = page_obj.content()
+    except Exception as e:
+        log.warning("Dubizzle goto error: %s", e)
+        return [], 0
+    m = NEXT_DATA_RE.search(html)
+    if not m:
+        log.warning("Dubizzle: no __NEXT_DATA__ en %s", url)
+        return [], 0
+    try:
+        d = json.loads(m.group(1))
+    except Exception:
+        return [], 0
+    hits = _dubizzle_hits_from_next(d)
+    # Total disponible según pagination
+    total = 0
+    try:
+        actions = d["props"]["pageProps"]["reduxWrapperActionsGIPP"]
+        for a in actions:
+            if isinstance(a, dict) and a.get("type", "").endswith("fetchListingDataForQuery/fulfilled"):
+                pag = (a.get("payload") or {}).get("pagination") or {}
+                total = pag.get("nbHits") or pag.get("total") or 0
+                break
+    except Exception:
+        pass
+    return hits, total
+
+
+def scrape_dubizzle(search: dict[str, Any], max_pages: int = 5) -> list[dict[str, Any]]:
+    all_hits: list[dict] = []
+    seen_ids: set[str] = set()
+    total_disponible = 0
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -166,34 +203,37 @@ def scrape_dubizzle(search: dict[str, Any]) -> list[dict[str, Any]]:
             )
             page = ctx.new_page()
             try:
-                page.goto(url, timeout=45000, wait_until="domcontentloaded")
-                try:
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    pass
-                html = page.content()
+                for pn in range(1, max_pages + 1):
+                    url = _dubizzle_url(search, page=pn)
+                    log.info("Dubizzle p%d: %s", pn, url)
+                    hits, total = _dubizzle_fetch_page(page, url)
+                    if pn == 1:
+                        total_disponible = total
+                    if not hits:
+                        break
+                    new = 0
+                    for h in hits:
+                        hid = str(h.get("id") or h.get("uuid") or h.get("objectID"))
+                        if hid and hid not in seen_ids:
+                            seen_ids.add(hid)
+                            all_hits.append(h)
+                            new += 1
+                    if new == 0:
+                        break
+                    # Si ya cubrimos casi todo lo disponible, paramos
+                    if total_disponible and len(all_hits) >= total_disponible:
+                        break
             finally:
                 ctx.close()
                 browser.close()
     except Exception as e:
         log.exception("Dubizzle Playwright error: %s", e)
         return []
-
-    if not html:
-        return []
-    m = NEXT_DATA_RE.search(html)
-    if not m:
-        log.warning("Dubizzle: no __NEXT_DATA__ (anti-bot)")
-        return []
-    try:
-        d = json.loads(m.group(1))
-    except Exception:
-        log.warning("Dubizzle: __NEXT_DATA__ parse failed")
-        return []
-
-    hits = _dubizzle_hits_from_next(d)
-    log.info("Dubizzle: %d hits", len(hits))
-    return _build_listings_from_hits(hits, search)
+    log.info(
+        "Dubizzle: %d hits únicos (de %d disponibles en Dubizzle)",
+        len(all_hits), total_disponible,
+    )
+    return _build_listings_from_hits(all_hits, search)
 
 
 # =========================================================

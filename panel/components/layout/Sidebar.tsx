@@ -33,8 +33,8 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
       >
         <div className="px-5 pt-6 pb-8 flex items-start">
           <div>
-            <div className="text-gold-light font-data text-sm tracking-widest">DUBAI</div>
-            <div className="text-text-primary font-medium text-lg leading-tight">Deal Bot</div>
+            <div className="text-gold-light font-data text-sm tracking-widest">EXPORT</div>
+            <div className="text-text-primary font-medium text-lg leading-tight">Dubai Deal</div>
           </div>
           <button
             onClick={onClose}
@@ -67,7 +67,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           })}
         </nav>
         <div className="px-4 py-4 border-t border-border text-xs text-text-tertiary">
-          v0.1 · ArbiCapital
+          v0.2
         </div>
       </aside>
     </>

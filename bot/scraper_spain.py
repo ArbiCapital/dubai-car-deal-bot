@@ -42,7 +42,11 @@ def _autoscout_url(marca: str, modelo: str, ano: int, page: int = 1) -> str:
     modelo_s = quote_plus(modelo.lower().replace(" ", "-"))
     return (
         f"https://www.autoscout24.es/lst/{marca_s}/{modelo_s}"
-        f"?atype=C&cy=E&fregfrom={ano}&fregto={ano}&sort=price&desc=0&page={page}"
+        f"?atype=C&cy=E&fregfrom={ano}&fregto={ano}"
+        # Excluir dañados / siniestrados (filtro nativo AutoScout)
+        f"&damaged_listing=NO_DAMAGED_VEHICLES"
+        # Solo coches que el vendedor lista como en buen estado / no de accidente
+        f"&sort=price&desc=0&page={page}"
     )
 
 
@@ -76,10 +80,28 @@ def _fetch_one_page(marca: str, modelo: str, ano: int, page: int) -> list[dict[s
     return listings if isinstance(listings, list) else []
 
 
+def _is_good_condition(listing: dict[str, Any]) -> bool:
+    """Heurística: descarta coches en mal estado / siniestrados.
+
+    Señales que descartamos:
+    - priceLabel == 'very-good-price': AutoScout marca así precios anormalmente bajos
+      (frecuentemente coches dañados, importados de subasta, etc.)
+    - specialConditions con algo (no vacío)
+    """
+    sc = listing.get("specialConditions")
+    if sc and isinstance(sc, (list, dict)) and len(sc) > 0:
+        return False
+    label = (listing.get("tracking") or {}).get("priceLabel", "")
+    if label == "very-good-price":
+        return False
+    return True
+
+
 def _fetch_listings(marca: str, modelo: str, ano: int, max_pages: int = 5) -> list[dict[str, Any]]:
     """Paginar AutoScout24 hasta `max_pages` o hasta que devuelva 0 listings."""
     all_listings: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
+    descartados_estado = 0
     for p in range(1, max_pages + 1):
         page_items = _fetch_one_page(marca, modelo, ano, p)
         if not page_items:
@@ -87,13 +109,20 @@ def _fetch_listings(marca: str, modelo: str, ano: int, max_pages: int = 5) -> li
         new = 0
         for item in page_items:
             id_ = str(item.get("id") or item.get("identifier") or item.get("url") or "")
-            if id_ and id_ not in seen_ids:
-                seen_ids.add(id_)
-                all_listings.append(item)
-                new += 1
+            if not id_ or id_ in seen_ids:
+                continue
+            seen_ids.add(id_)
+            if not _is_good_condition(item):
+                descartados_estado += 1
+                continue
+            all_listings.append(item)
+            new += 1
         if new == 0:
             break  # página repetida → fin
-    log.info("AutoScout24 total: %d listings únicos en %d páginas", len(all_listings), p)
+    log.info(
+        "AutoScout24: %d listings únicos en %d páginas (%d descartados por estado/precio sospechoso)",
+        len(all_listings), p, descartados_estado,
+    )
     return all_listings
 
 

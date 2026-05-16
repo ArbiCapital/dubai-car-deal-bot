@@ -50,8 +50,8 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center px-4 relative">
       <form onSubmit={submit} className="card w-full max-w-sm space-y-4 relative z-10">
         <div>
-          <div className="text-gold-light font-data text-xs tracking-widest">DUBAI</div>
-          <h1 className="text-text-primary text-xl font-medium">Deal Bot · ArbiCapital</h1>
+          <div className="text-gold-light font-data text-xs tracking-widest">EXPORT</div>
+          <h1 className="text-text-primary text-xl font-medium">Dubai Deal</h1>
           <p className="text-xs text-text-tertiary mt-2">
             {mode === "signin" ? "Entra al panel" : "Crear cuenta (uso interno)"}
           </p>

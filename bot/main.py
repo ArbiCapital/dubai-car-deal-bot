@@ -38,28 +38,36 @@ log = logging.getLogger("dubai-bot")
 
 
 def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[str, Any], tg: Telegram) -> dict[str, int]:
-    log.info("▶ Búsqueda: %s", search["nombre"])
+    log.info("▶ Búsqueda: %s [marca=%s modelo=%s años=%s-%s precio=%s-%s AED km≤%s specs=%s]",
+             search["nombre"], search["marca"], search["modelo"],
+             search["ano_min"], search["ano_max"],
+             search["precio_min_aed"], search["precio_max_aed"],
+             search["km_max"], search.get("especificaciones") or "todas")
     fuentes = settings.get("fuentes", {"dubizzle": True, "dubicars": True})
     listings = scrape_search(search, fuentes)
-    log.info("  %d anuncios brutos", len(listings))
+    log.info("  %d anuncios brutos tras todas las fuentes", len(listings))
 
-    stats = {"analizados": 0, "deals": 0, "nuevos": 0}
+    stats = {"analizados": 0, "deals": 0, "nuevos": 0, "ya_vistos": 0, "sin_ano": 0, "sin_stats_es": 0, "no_supera_umbral": 0}
     for lst in listings:
         if is_seen(lst["listing_id"]):
+            stats["ya_vistos"] += 1
             continue
         stats["nuevos"] += 1
         stats["analizados"] += 1
 
         if not lst.get("ano"):
+            stats["sin_ano"] += 1
+            mark_seen(lst["listing_id"])
             continue
         spain = fetch_spain_stats(search["marca"], search["modelo"], int(lst["ano"]))
         if not spain:
+            stats["sin_stats_es"] += 1
             mark_seen(lst["listing_id"])
             continue
 
         eva = evaluar_deal(
             precio_aed=lst["precio_aed"],
-            precio_referencia_es=spain["minimo"],  # comparamos contra el más barato del mercado España
+            precio_referencia_es=spain["minimo"],
             costes=costes,
             settings_global=settings,
             margen_minimo_override=search.get("margen_minimo_override"),
@@ -67,6 +75,7 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
         clasif = eva["clasificacion"]
         mark_seen(lst["listing_id"])
         if not clasif:
+            stats["no_supera_umbral"] += 1
             continue
 
         deal_row = {
@@ -110,13 +119,17 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
         )
         if enviado_ok:
             try:
-                from config_loader import _client  # type: ignore
                 _client().table("dubai_deals").update({"enviado_telegram": True}).eq(
                     "url", lst["url"]
                 ).execute()
             except Exception:
                 log.exception("No se pudo marcar enviado_telegram")
         stats["deals"] += 1
+    log.info(
+        "  Resumen '%s': brutos=%d ya_vistos=%d nuevos=%d (sin_año=%d, sin_stats_ES=%d, no_supera_umbral=%d) → deals=%d",
+        search["nombre"], len(listings), stats["ya_vistos"], stats["nuevos"],
+        stats["sin_ano"], stats["sin_stats_es"], stats["no_supera_umbral"], stats["deals"],
+    )
     return stats
 
 

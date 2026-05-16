@@ -2,8 +2,8 @@ import "../styles/globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Dubai Deal Bot · ArbiCapital",
-  description: "Panel de control del bot de importación de coches de Dubai.",
+  title: "Export Dubai Deal",
+  description: "Panel de control del bot de importación de coches Dubai → España.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
