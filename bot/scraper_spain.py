@@ -37,18 +37,18 @@ def _cache_key(marca: str, modelo: str, ano: int) -> str:
     return f"{_slug(marca)}_{_slug(modelo)}_{ano}"
 
 
-def _autoscout_url(marca: str, modelo: str, ano: int) -> str:
+def _autoscout_url(marca: str, modelo: str, ano: int, page: int = 1) -> str:
     marca_s = quote_plus(marca.lower().replace(" ", "-"))
     modelo_s = quote_plus(modelo.lower().replace(" ", "-"))
     return (
         f"https://www.autoscout24.es/lst/{marca_s}/{modelo_s}"
-        f"?atype=C&cy=E&fregfrom={ano}&fregto={ano}&sort=price&desc=0"
+        f"?atype=C&cy=E&fregfrom={ano}&fregto={ano}&sort=price&desc=0&page={page}"
     )
 
 
-def _fetch_listings(marca: str, modelo: str, ano: int) -> list[dict[str, Any]]:
-    url = _autoscout_url(marca, modelo, ano)
-    log.info("AutoScout24 URL: %s", url)
+def _fetch_one_page(marca: str, modelo: str, ano: int, page: int) -> list[dict[str, Any]]:
+    url = _autoscout_url(marca, modelo, ano, page)
+    log.info("AutoScout24 page %d: %s", page, url)
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml",
@@ -58,26 +58,43 @@ def _fetch_listings(marca: str, modelo: str, ano: int) -> list[dict[str, Any]]:
         with httpx.Client(timeout=30, follow_redirects=True, headers=headers) as c:
             r = c.get(url)
             if r.status_code != 200:
-                log.warning("AutoScout24 HTTP %s", r.status_code)
+                log.warning("AutoScout24 HTTP %s on page %d", r.status_code, page)
                 return []
             html = r.text
     except Exception as e:
-        log.warning("AutoScout24 fetch error: %s", e)
+        log.warning("AutoScout24 fetch error page %d: %s", page, e)
         return []
 
     m = NEXT_DATA_RE.search(html)
     if not m:
-        log.warning("AutoScout24: no __NEXT_DATA__")
         return []
     try:
         d = json.loads(m.group(1))
     except Exception:
-        log.warning("AutoScout24: __NEXT_DATA__ JSON parse failed")
         return []
     listings = d.get("props", {}).get("pageProps", {}).get("listings") or []
-    if not isinstance(listings, list):
-        return []
-    return listings
+    return listings if isinstance(listings, list) else []
+
+
+def _fetch_listings(marca: str, modelo: str, ano: int, max_pages: int = 5) -> list[dict[str, Any]]:
+    """Paginar AutoScout24 hasta `max_pages` o hasta que devuelva 0 listings."""
+    all_listings: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for p in range(1, max_pages + 1):
+        page_items = _fetch_one_page(marca, modelo, ano, p)
+        if not page_items:
+            break
+        new = 0
+        for item in page_items:
+            id_ = str(item.get("id") or item.get("identifier") or item.get("url") or "")
+            if id_ and id_ not in seen_ids:
+                seen_ids.add(id_)
+                all_listings.append(item)
+                new += 1
+        if new == 0:
+            break  # página repetida → fin
+    log.info("AutoScout24 total: %d listings únicos en %d páginas", len(all_listings), p)
+    return all_listings
 
 
 def fetch_spain_stats(marca: str, modelo: str, ano: int) -> dict[str, Any] | None:
