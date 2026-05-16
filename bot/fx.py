@@ -17,7 +17,7 @@ def fetch_aed_to_eur() -> float | None:
     try:
         # Frankfurter no soporta AED como base; usamos USD→EUR + AED peg a USD (3.6725)
         # PERO Frankfurter sí trae AED como currency. Probamos directo y caemos a USD si falla.
-        with httpx.Client(timeout=15) as c:
+        with httpx.Client(timeout=15, follow_redirects=True) as c:
             r = c.get(FRANKFURTER_URL, params={"from": "AED", "to": "EUR"})
             if r.status_code == 200:
                 rate = (r.json() or {}).get("rates", {}).get("EUR")
