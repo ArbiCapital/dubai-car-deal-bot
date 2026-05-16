@@ -199,8 +199,18 @@ def _dubicars_fetch(url: str) -> str | None:
         return None
 
 
-def _dubicars_parse_jsonld(html: str, search: dict[str, Any]) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
+DUBICARS_PRICE_RE = re.compile(
+    r'class="[^"]*text-dark[^"]*"[^>]*>\s*AED\s*([\d,]+)', re.I
+)
+DUBICARS_URL_RE = re.compile(
+    r'href="(https?://www\.dubicars\.com/\d{4}-[^"]+\.html)"'
+)
+DUBICARS_YEAR_SLUG_RE = re.compile(r'/(\d{4})-')
+
+
+def _build_ld_meta(html: str) -> dict[str, dict[str, Any]]:
+    """ItemList del JSON-LD nos da name + year + km + image fiables (NO precio)."""
+    out: dict[str, dict[str, Any]] = {}
     for m in LD_JSON_RE.finditer(html):
         try:
             d = json.loads(m.group(1).strip())
@@ -214,24 +224,10 @@ def _dubicars_parse_jsonld(html: str, search: dict[str, Any]) -> list[dict[str, 
                 car = el.get("item") or {}
                 if not isinstance(car, dict):
                     continue
-                offer = car.get("offers") or {}
-                if isinstance(offer, list) and offer:
-                    offer = offer[0]
-                price = offer.get("price") if isinstance(offer, dict) else None
                 url_ = car.get("url")
-                if not (price and url_):
+                if not url_:
                     continue
-                try:
-                    precio_aed = float(str(price).replace(",", ""))
-                except Exception:
-                    continue
-
-                titulo = car.get("name") or f"{search['marca']} {search['modelo']}"
                 year = car.get("vehicleModelDate")
-                try:
-                    ano = int(year) if year else None
-                except Exception:
-                    ano = None
                 km_field = car.get("mileageFromOdometer")
                 km = None
                 if isinstance(km_field, dict):
@@ -239,31 +235,90 @@ def _dubicars_parse_jsonld(html: str, search: dict[str, Any]) -> list[dict[str, 
                         km = int(km_field.get("value")) if km_field.get("value") else None
                     except Exception:
                         km = None
-
                 image = car.get("image")
                 if isinstance(image, list):
                     image = image[0] if image else None
-
-                listing_id = "dubicars:" + url_.rstrip("/").rsplit("/", 1)[-1].replace(".html", "")
-                results.append({
-                    "listing_id": listing_id,
-                    "fuente": "DubiCars",
-                    "titulo": str(titulo),
-                    "precio_aed": precio_aed,
+                try:
+                    ano = int(year) if year else None
+                except Exception:
+                    ano = None
+                out[url_] = {
+                    "name": car.get("name"),
                     "ano": ano,
                     "km": km,
-                    "url": url_,
-                    "foto_url": image,
-                })
-    # Dedup
-    seen = set()
-    uniq = []
-    for r in results:
-        if r["listing_id"] in seen:
+                    "image": image,
+                }
+            break
+    return out
+
+
+def _dubicars_parse_html(html: str, search: dict[str, Any]) -> list[dict[str, Any]]:
+    """Empareja precios visibles con URLs por posición en el HTML.
+
+    El JSON-LD del list page tiene un campo `offers.price` poco fiable.
+    El precio visible `<strong class="...text-dark">AED X,XXX</strong>` es el real.
+    """
+    ld_meta = _build_ld_meta(html)
+
+    # Posiciones de precios visibles
+    prices_pos: list[tuple[int, int]] = []
+    for m in DUBICARS_PRICE_RE.finditer(html):
+        try:
+            v = int(m.group(1).replace(",", ""))
+        except Exception:
             continue
-        seen.add(r["listing_id"])
-        uniq.append(r)
-    return uniq
+        if v >= 10000:  # filtra cuotas mensuales (AED 3,147 etc.)
+            prices_pos.append((m.start(), v))
+
+    # Posiciones de URLs canónicas (dedup preservando orden de aparición)
+    urls_pos: list[tuple[int, str]] = []
+    seen_url: set[str] = set()
+    for m in DUBICARS_URL_RE.finditer(html):
+        u = m.group(1)
+        if u in seen_url:
+            continue
+        seen_url.add(u)
+        urls_pos.append((m.start(), u))
+
+    results: list[dict[str, Any]] = []
+    used: set[str] = set()
+    for pp, precio in prices_pos:
+        # Coger la URL canónica más cercana ANTES (cada card lista la URL antes del precio)
+        candidate = None
+        for up, u in urls_pos:
+            if up < pp and u not in used:
+                candidate = u
+            elif up >= pp:
+                break
+        if not candidate:
+            continue
+        used.add(candidate)
+
+        if "per-month" in candidate or "-pm-" in candidate:
+            continue
+
+        meta = ld_meta.get(candidate, {})
+        titulo = meta.get("name") or f"{search['marca']} {search['modelo']}"
+        ano = meta.get("ano")
+        if ano is None:
+            ym = DUBICARS_YEAR_SLUG_RE.search(candidate.rsplit("/", 1)[-1])
+            if ym:
+                try:
+                    ano = int(ym.group(1))
+                except Exception:
+                    ano = None
+        listing_id = "dubicars:" + candidate.rstrip("/").rsplit("/", 1)[-1].replace(".html", "")
+        results.append({
+            "listing_id": listing_id,
+            "fuente": "DubiCars",
+            "titulo": str(titulo),
+            "precio_aed": float(precio),
+            "ano": ano,
+            "km": meta.get("km"),
+            "url": candidate,
+            "foto_url": meta.get("image"),
+        })
+    return results
 
 
 def _passes_filters(item: dict, search: dict) -> bool:
@@ -301,34 +356,13 @@ def scrape_dubicars(search: dict[str, Any]) -> list[dict[str, Any]]:
     html = _dubicars_fetch(url)
     if not html:
         return []
-    listings = _dubicars_parse_jsonld(html, search)
-    log.info("DubiCars: %d listings raw", len(listings))
+    listings = _dubicars_parse_html(html, search)
+    log.info("DubiCars: %d listings raw (HTML parse)", len(listings))
 
-    # Skip URLs que son EMI bait (precio listado es la cuota mensual)
-    listings = [l for l in listings if "per-month" not in l["url"] and "-pm-" not in l["url"]]
-    log.info("DubiCars: %d tras drop EMI", len(listings))
-
-    # Filtro precio/año/km usando el precio del list page
+    # Filtro precio/año/km
     filtered = [l for l in listings if _passes_filters(l, search)]
     log.info("DubiCars: %d tras filtro", len(filtered))
-
-    # Verificación: SIEMPRE confirmar el precio contra detail page.
-    # El JSON-LD del list page no es fiable desde algunas IPs (GH Actions runners).
-    verified: list[dict[str, Any]] = []
-    for l in filtered:
-        real = _dubicars_verify_price(l["url"])
-        time.sleep(random.uniform(0.3, 0.7))
-        if not real:
-            log.info("DubiCars: no se pudo verificar %s, skip", l["url"].rsplit("/", 1)[-1][:50])
-            continue
-        if real != int(l["precio_aed"]):
-            log.info("DubiCars: precio %s→%s en %s", int(l["precio_aed"]), real, l["url"].rsplit("/", 1)[-1][:40])
-            l["precio_aed"] = float(real)
-        if _passes_filters(l, search):
-            verified.append(l)
-
-    log.info("DubiCars: %d listings finales", len(verified))
-    return verified
+    return filtered
 
 
 # =========================================================
