@@ -19,9 +19,6 @@ from config_loader import (
     get_costes,
     get_global_settings,
     get_telegram_config,
-    is_seen,
-    mark_seen,
-    save_deal,
 )
 from fx import fetch_aed_to_eur
 from scraper_dubai import scrape_search
@@ -37,6 +34,37 @@ logging.basicConfig(
 log = logging.getLogger("dubai-bot")
 
 
+def _url_already_notified(url: str) -> bool:
+    """¿Esta URL ya fue enviada por Telegram en algún momento?"""
+    try:
+        res = (
+            _client()
+            .table("dubai_deals")
+            .select("enviado_telegram")
+            .eq("url", url)
+            .eq("enviado_telegram", True)
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+    except Exception:
+        return False
+
+
+def _upsert_deal(deal_row: dict[str, Any]) -> None:
+    """Insert o update por url (la url identifica unívocamente el listing)."""
+    try:
+        existing = (
+            _client().table("dubai_deals").select("id").eq("url", deal_row["url"]).limit(1).execute()
+        )
+        if existing.data:
+            _client().table("dubai_deals").update(deal_row).eq("url", deal_row["url"]).execute()
+        else:
+            _client().table("dubai_deals").insert(deal_row).execute()
+    except Exception:
+        log.exception("Error upserting deal %s", deal_row.get("url"))
+
+
 def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[str, Any], tg: Telegram) -> dict[str, int]:
     log.info("▶ Búsqueda: %s [marca=%s modelo=%s años=%s-%s precio=%s-%s AED km≤%s specs=%s]",
              search["nombre"], search["marca"], search["modelo"],
@@ -47,22 +75,16 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
     listings = scrape_search(search, fuentes)
     log.info("  %d anuncios brutos tras todas las fuentes", len(listings))
 
-    stats = {"analizados": 0, "deals": 0, "nuevos": 0, "ya_vistos": 0, "sin_ano": 0, "sin_stats_es": 0, "no_supera_umbral": 0}
+    stats = {"analizados": 0, "deals": 0, "sin_ano": 0, "sin_stats_es": 0, "no_supera_umbral": 0, "tg_ya_enviado": 0}
     for lst in listings:
-        if is_seen(lst["listing_id"]):
-            stats["ya_vistos"] += 1
-            continue
-        stats["nuevos"] += 1
         stats["analizados"] += 1
 
         if not lst.get("ano"):
             stats["sin_ano"] += 1
-            mark_seen(lst["listing_id"])
             continue
         spain = fetch_spain_stats(search["marca"], search["modelo"], int(lst["ano"]))
         if not spain:
             stats["sin_stats_es"] += 1
-            mark_seen(lst["listing_id"])
             continue
 
         eva = evaluar_deal(
@@ -73,7 +95,6 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
             margen_minimo_override=search.get("margen_minimo_override"),
         )
         clasif = eva["clasificacion"]
-        mark_seen(lst["listing_id"])
         if not clasif:
             stats["no_supera_umbral"] += 1
             continue
@@ -97,10 +118,14 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
             "umbral_aplicado": int(eva["umbral_aplicado"]),
             "enviado_telegram": False,
         }
-        try:
-            save_deal(deal_row)
-        except Exception:
-            log.exception("No se pudo guardar deal en Supabase")
+        # Upsert para que el panel siempre tenga el dato actual (precio cambia con el tiempo)
+        _upsert_deal(deal_row)
+        stats["deals"] += 1
+
+        # Telegram: solo si NUNCA hemos enviado este URL antes
+        if _url_already_notified(lst["url"]):
+            stats["tg_ya_enviado"] += 1
+            continue
 
         mensaje = formatear_mensaje(
             deal={
@@ -124,11 +149,11 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
                 ).execute()
             except Exception:
                 log.exception("No se pudo marcar enviado_telegram")
-        stats["deals"] += 1
     log.info(
-        "  Resumen '%s': brutos=%d ya_vistos=%d nuevos=%d (sin_año=%d, sin_stats_ES=%d, no_supera_umbral=%d) → deals=%d",
-        search["nombre"], len(listings), stats["ya_vistos"], stats["nuevos"],
-        stats["sin_ano"], stats["sin_stats_es"], stats["no_supera_umbral"], stats["deals"],
+        "  Resumen '%s': escaneados=%d (sin_año=%d, sin_stats_ES=%d, no_supera_umbral=%d) → deals=%d (de los cuales %d ya estaban notificados)",
+        search["nombre"], stats["analizados"],
+        stats["sin_ano"], stats["sin_stats_es"], stats["no_supera_umbral"],
+        stats["deals"], stats["tg_ya_enviado"],
     )
     return stats
 
@@ -163,7 +188,7 @@ def job() -> None:
     searches = get_active_searches()
     log.info("Búsquedas activas: %d", len(searches))
 
-    totales = {"analizados": 0, "deals": 0, "nuevos": 0}
+    totales = {"analizados": 0, "deals": 0, "tg_ya_enviado": 0, "sin_ano": 0, "sin_stats_es": 0, "no_supera_umbral": 0}
     for s in searches:
         try:
             r = _run_search(s, settings, costes, tg)
@@ -173,13 +198,16 @@ def job() -> None:
             log.exception("Búsqueda falló: %s", s.get("nombre"))
 
     log.info("=== JOB END — %s ===", totales)
-    if tg_cfg.get("enviar_resumen") and totales["deals"] >= 0:
+    if tg_cfg.get("enviar_resumen"):
+        nuevos = totales["deals"] - totales.get("tg_ya_enviado", 0)
         try:
             tg.enviar(
-                f"📊 *Resumen*\n"
-                f"Anuncios nuevos: {totales['nuevos']}\n"
-                f"Analizados: {totales['analizados']}\n"
-                f"Deals encontrados: {totales['deals']}"
+                f"📊 *Resumen Export Dubai Deal*\n"
+                f"Anuncios escaneados: {totales['analizados']}\n"
+                f"Deals que cumplen umbral: {totales['deals']}\n"
+                f"  · Notificados ahora: {nuevos}\n"
+                f"  · Ya notificados antes: {totales.get('tg_ya_enviado', 0)}\n"
+                f"Descartados: sin año {totales.get('sin_ano', 0)} · sin precio ES {totales.get('sin_stats_es', 0)} · no llega umbral {totales.get('no_supera_umbral', 0)}"
             )
         except Exception:
             pass
