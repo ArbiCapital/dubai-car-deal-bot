@@ -121,19 +121,67 @@ export default function SettingsPage() {
 
       <Section title="Costes de exportación">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <NumField label="Exportación RTA (€)" v={costes.rta_exportacion_eur} on={(x) => setCostes({ ...costes, rta_exportacion_eur: x })} />
-          <NumField label="Transporte marítimo (€)" v={costes.transporte_eur} on={(x) => setCostes({ ...costes, transporte_eur: x })} />
-          <NumField label="Seguro transporte (%)" step="0.001" v={costes.seguro_pct} on={(x) => setCostes({ ...costes, seguro_pct: x })} />
-          <NumField label="Agente aduanas (€)" v={costes.agente_aduana_eur} on={(x) => setCostes({ ...costes, agente_aduana_eur: x })} />
-          <NumField label="Homologación (€)" v={costes.homologacion_eur} on={(x) => setCostes({ ...costes, homologacion_eur: x })} />
-          <NumField label="ITV (€)" v={costes.itv_eur} on={(x) => setCostes({ ...costes, itv_eur: x })} />
-          <NumField label="Matriculación (€)" v={costes.matriculacion_eur} on={(x) => setCostes({ ...costes, matriculacion_eur: x })} />
-          <NumField label="Factor Hacienda" step="0.01" v={costes.factor_hacienda} on={(x) => setCostes({ ...costes, factor_hacienda: x })} />
-          <NumField label="Imp. matriculación (%)" step="0.001" v={costes.impuesto_mat_pct} on={(x) => setCostes({ ...costes, impuesto_mat_pct: x })} />
-          <Field label="Arancel (fijo)" hint="10% por ley. No editable.">
+          <NumField
+            label="Exportación RTA (€)"
+            hint="Tasa de la RTA de Dubái por exportar el vehículo (certificado export)."
+            v={costes.rta_exportacion_eur}
+            on={(x) => setCostes({ ...costes, rta_exportacion_eur: x })}
+          />
+          <NumField
+            label="Transporte marítimo (€)"
+            hint="Flete Dubái → puerto español (Valencia/Barcelona) en RoRo o contenedor."
+            v={costes.transporte_eur}
+            on={(x) => setCostes({ ...costes, transporte_eur: x })}
+          />
+          <NumField
+            label="Seguro transporte (%)"
+            step="0.001"
+            hint="% sobre el valor del coche. Cubre daños/pérdida durante el flete."
+            v={costes.seguro_pct}
+            on={(x) => setCostes({ ...costes, seguro_pct: x })}
+          />
+          <NumField
+            label="Agente aduanas (€)"
+            hint="Honorarios del transitario/agente para el despacho en aduana española."
+            v={costes.agente_aduana_eur}
+            on={(x) => setCostes({ ...costes, agente_aduana_eur: x })}
+          />
+          <NumField
+            label="Homologación (€)"
+            hint="Tasas de ingeniero + ensayos para emitir la ficha técnica española."
+            v={costes.homologacion_eur}
+            on={(x) => setCostes({ ...costes, homologacion_eur: x })}
+          />
+          <NumField
+            label="ITV (€)"
+            hint="Inspección Técnica de Vehículos previa a matricular en España."
+            v={costes.itv_eur}
+            on={(x) => setCostes({ ...costes, itv_eur: x })}
+          />
+          <NumField
+            label="Matriculación (€)"
+            hint="Tasa DGT + placas + gestoría para sacar la matrícula española."
+            v={costes.matriculacion_eur}
+            on={(x) => setCostes({ ...costes, matriculacion_eur: x })}
+          />
+          <NumField
+            label="Factor Hacienda"
+            step="0.01"
+            hint="Coef. de minoración Hacienda aplica al valor de mercado (BOE Orden). Ej.: 0.65 = 65%."
+            v={costes.factor_hacienda}
+            on={(x) => setCostes({ ...costes, factor_hacienda: x })}
+          />
+          <NumField
+            label="Imp. matriculación (%)"
+            step="0.001"
+            hint="IEDMT (modelo 576). Tramo medio CO₂ ≈ 14,75%. Varía por CO₂."
+            v={costes.impuesto_mat_pct}
+            on={(x) => setCostes({ ...costes, impuesto_mat_pct: x })}
+          />
+          <Field label="Arancel (fijo)" hint="10% sobre el valor del coche. Fijado por la UE para importar de fuera. No editable.">
             <Input value="10%" disabled />
           </Field>
-          <Field label="IVA importación (fijo)" hint="21% por ley. No editable.">
+          <Field label="IVA importación (fijo)" hint="21% sobre (precio + arancel). Se paga al Estado al importar. No editable.">
             <Input value="21%" disabled />
           </Field>
         </div>
@@ -196,10 +244,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function NumField({
-  label, v, on, step,
-}: { label: string; v: number; on: (x: number) => void; step?: string }) {
+  label, v, on, step, hint,
+}: { label: string; v: number; on: (x: number) => void; step?: string; hint?: string }) {
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint}>
       <Input type="number" step={step ?? "1"} value={v} onChange={(e) => on(+e.target.value)} />
     </Field>
   );
