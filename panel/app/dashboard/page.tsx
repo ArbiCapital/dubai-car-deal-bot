@@ -46,14 +46,14 @@ export default function DashboardPage() {
       <h2 className="text-sm uppercase tracking-wider text-text-tertiary mb-3">Últimos deals</h2>
       <div className="space-y-2">
         {deals.slice(0, 5).map((d) => (
-          <div key={d.id} className="card !py-3 !px-4 flex items-center gap-4">
+          <div key={d.id} className="card !py-3 !px-4 flex flex-wrap items-center gap-x-3 gap-y-2">
             <Badge kind={d.clasificacion} />
-            <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 text-sm text-text-primary truncate hover:text-gold-light">
+            <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 min-w-0 text-sm text-text-primary truncate hover:text-gold-light">
               {d.titulo}
             </a>
-            <span className="text-xs text-text-tertiary font-data">{d.fuente}</span>
+            <span className="text-xs text-text-tertiary font-data hidden sm:inline">{d.fuente}</span>
             <span className="text-sm font-data text-gold-light">{fmtEur(d.margen)}</span>
-            <span className="text-xs text-text-tertiary">{fmtDate(d.created_at)}</span>
+            <span className="text-xs text-text-tertiary hidden sm:inline">{fmtDate(d.created_at)}</span>
           </div>
         ))}
         {!loading && deals.length === 0 && (

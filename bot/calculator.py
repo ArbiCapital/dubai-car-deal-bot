@@ -60,19 +60,24 @@ def calcular_coste_espana(precio_aed: float, costes: dict[str, Any], aed_to_eur:
 def evaluar_deal(
     *,
     precio_aed: float,
-    mediana_espana: int,
+    precio_referencia_es: int,
     costes: dict[str, Any],
     settings_global: dict[str, Any],
     margen_minimo_override: int | None = None,
 ) -> dict[str, Any]:
-    """Devuelve desglose + margen + clasificación. Si no supera el umbral → clasificación None."""
+    """Devuelve desglose + margen + clasificación. Si no supera el umbral → clasificación None.
+
+    `precio_referencia_es` es el precio contra el que se compara la venta. Convención del
+    proyecto: usamos el MÍNIMO saneado del mercado España (el competidor más barato),
+    para que el margen calculado sea conservador.
+    """
     aed_to_eur = settings_global["aed_to_eur"]
     descuento_venta = settings_global["descuento_venta_pct"]
     umbral = margen_minimo_override or settings_global["margen_minimo_eur"]
 
     desglose = calcular_coste_espana(precio_aed, costes, aed_to_eur)
     coste_total = desglose["coste_total"]
-    precio_venta = mediana_espana * (1 - descuento_venta)
+    precio_venta = precio_referencia_es * (1 - descuento_venta)
     margen = precio_venta - coste_total
     margen_pct = margen / coste_total if coste_total else 0
 

@@ -59,7 +59,7 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
 
         eva = evaluar_deal(
             precio_aed=lst["precio_aed"],
-            mediana_espana=spain["mediana"],
+            precio_referencia_es=spain["minimo"],  # comparamos contra el más barato del mercado España
             costes=costes,
             settings_global=settings,
             margen_minimo_override=search.get("margen_minimo_override"),
@@ -79,7 +79,7 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
             "km": lst.get("km"),
             "url": lst["url"],
             "foto_url": lst.get("foto_url"),
-            "precio_mercado_es": int(spain["mediana"]),
+            "precio_mercado_es": int(spain["minimo"]),  # mínimo saneado = competidor más barato
             "num_anuncios_es": int(spain["num_anuncios"]),
             "coste_total_espana": int(eva["desglose"]["coste_total"]),
             "margen": int(eva["margen"]),

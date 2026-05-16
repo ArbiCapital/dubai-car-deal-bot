@@ -42,9 +42,9 @@ export function SearchCard({
   ].filter(Boolean) as string[];
 
   return (
-    <div className="card flex items-start gap-4">
+    <div className="card flex flex-col md:flex-row md:items-start gap-4">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h3 className="text-base font-medium text-text-primary">{search.nombre}</h3>
           <span className="text-xs text-text-tertiary font-data">
             {dealsCount} deals
@@ -69,32 +69,34 @@ export function SearchCard({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-4 shrink-0">
+      <div className="flex items-center gap-4 shrink-0 justify-between md:justify-end border-t md:border-t-0 border-border pt-3 md:pt-0">
         <Toggle checked={search.activa} onChange={toggleActiva} ariaLabel="Activa" />
-        <button onClick={onEdit} className="text-xs text-text-secondary hover:text-gold-light underline-offset-2 hover:underline">
-          Editar
-        </button>
-        {confirm ? (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={doDelete}
-              disabled={deleting}
-              className="text-xs text-danger hover:underline disabled:opacity-50"
-            >
-              {deleting ? "…" : "Confirmar"}
-            </button>
-            <button onClick={() => setConfirm(false)} className="text-xs text-text-tertiary hover:text-text-primary">
-              ×
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirm(true)}
-            className="text-xs text-text-tertiary hover:text-danger underline-offset-2 hover:underline"
-          >
-            Borrar
+        <div className="flex items-center gap-3">
+          <button onClick={onEdit} className="text-xs text-text-secondary hover:text-gold-light underline-offset-2 hover:underline">
+            Editar
           </button>
-        )}
+          {confirm ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={doDelete}
+                disabled={deleting}
+                className="text-xs text-danger hover:underline disabled:opacity-50"
+              >
+                {deleting ? "…" : "Confirmar"}
+              </button>
+              <button onClick={() => setConfirm(false)} className="text-xs text-text-tertiary hover:text-text-primary">
+                ×
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirm(true)}
+              className="text-xs text-text-tertiary hover:text-danger underline-offset-2 hover:underline"
+            >
+              Borrar
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
