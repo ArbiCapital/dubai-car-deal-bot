@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 
+# Sub-categorías visuales (extra "premio" cuando margen es muy alto).
+# IMPORTANTE: NUNCA se aplican sin antes pasar el umbral mínimo.
 UMBRAL_EXCEPCIONAL = 15000
 UMBRAL_MUY_BUENO = 10000
 
@@ -63,7 +65,7 @@ def evaluar_deal(
     settings_global: dict[str, Any],
     margen_minimo_override: int | None = None,
 ) -> dict[str, Any]:
-    """Devuelve desglose + margen + clasificación, o None si no supera el umbral."""
+    """Devuelve desglose + margen + clasificación. Si no supera el umbral → clasificación None."""
     aed_to_eur = settings_global["aed_to_eur"]
     descuento_venta = settings_global["descuento_venta_pct"]
     umbral = margen_minimo_override or settings_global["margen_minimo_eur"]
@@ -74,14 +76,18 @@ def evaluar_deal(
     margen = precio_venta - coste_total
     margen_pct = margen / coste_total if coste_total else 0
 
-    if margen >= UMBRAL_EXCEPCIONAL:
-        clasificacion = "excepcional"
-    elif margen >= UMBRAL_MUY_BUENO:
-        clasificacion = "muy_bueno"
-    elif margen >= umbral:
-        clasificacion = "bueno"
-    else:
+    # REGLA: el umbral mínimo es ABSOLUTO. Si no llega, no es deal.
+    if margen < umbral:
         clasificacion = None
+    else:
+        # Pasa el filtro. Asigna sub-categoría visual según cuán alto sea el margen.
+        # Las constantes son "sweeteners" — solo aplican si SUPERAN el umbral.
+        if margen >= max(umbral, UMBRAL_EXCEPCIONAL):
+            clasificacion = "excepcional"
+        elif margen >= max(umbral, UMBRAL_MUY_BUENO):
+            clasificacion = "muy_bueno"
+        else:
+            clasificacion = "bueno"
 
     return {
         "desglose": desglose,

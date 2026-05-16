@@ -106,19 +106,32 @@ def fetch_spain_stats(marca: str, modelo: str, ano: int) -> dict[str, Any] | Non
             except Exception:
                 pass
 
-    prices = [p for p in prices if 3000 <= p <= 300000]
-    if len(prices) < 3:
+    # Filtro inicial de sanidad
+    prices = [p for p in prices if 3000 <= p <= 500000]
+    if len(prices) < 5:
         log.warning("Solo %d precios para %s — sin stats", len(prices), key)
         return None
 
+    # Saneo: corto el 10% inferior y 10% superior (descarta outliers / cuotas EMI / coches dañados)
+    prices.sort()
+    cut = max(1, len(prices) // 10)
+    saneado = prices[cut:-cut] if len(prices) > 2 * cut else prices
+    if len(saneado) < 3:
+        log.warning("Saneo dejó solo %d precios — uso lista cruda", len(saneado))
+        saneado = prices
+
     stats = {
-        "mediana": int(statistics.median(prices)),
-        "minimo": int(min(prices)),
-        "maximo": int(max(prices)),
-        "media": int(statistics.mean(prices)),
-        "num_anuncios": len(prices),
+        "mediana": int(statistics.median(saneado)),
+        "minimo": int(min(saneado)),
+        "maximo": int(max(saneado)),
+        "media": int(statistics.mean(saneado)),
+        "num_anuncios": len(saneado),
         "fuente": "autoscout24.es",
     }
+    log.info(
+        "Spain stats %s: %d crudos → %d saneados, mín=%s med=%s máx=%s",
+        key, len(prices), len(saneado), stats["minimo"], stats["mediana"], stats["maximo"],
+    )
     try:
         save_cached_price(key, stats, hours=24)
     except Exception:
