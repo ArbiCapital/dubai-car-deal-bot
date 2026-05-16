@@ -84,7 +84,10 @@ export function SearchForm({ initial, onClose, onSaved }: Props) {
           <Field label="Precio mín AED"><Input type="number" value={form.precio_min_aed} onChange={(e) => setForm({ ...form, precio_min_aed: +e.target.value })} /></Field>
           <Field label="Precio máx AED"><Input type="number" value={form.precio_max_aed} onChange={(e) => setForm({ ...form, precio_max_aed: +e.target.value })} /></Field>
           <Field label="Kilómetros máx"><Input type="number" value={form.km_max} onChange={(e) => setForm({ ...form, km_max: +e.target.value })} /></Field>
-          <Field label="Margen mínimo override (€)" hint="Vacío = usa el global">
+          <Field
+            label="Margen mínimo solo para esta búsqueda (€)"
+            hint="Sobrescribe el global de /settings. Vacío = usa el global."
+          >
             <Input
               type="number"
               value={form.margen_minimo_override ?? ""}
