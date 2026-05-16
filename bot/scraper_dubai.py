@@ -35,12 +35,40 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
+# Alias específicos para Dubizzle (las marcas/modelos en español → slug del sitio).
+MARCA_SLUG_ALIAS: dict[str, str] = {
+    "mercedes": "mercedes-benz",
+    "mercedes benz": "mercedes-benz",
+    "mb": "mercedes-benz",
+}
+MODELO_SLUG_ALIAS: dict[str, str] = {
+    "clase g": "g-class",
+    "clase-g": "g-class",
+    "clase c": "c-class",
+    "clase e": "e-class",
+    "clase s": "s-class",
+    "clase a": "a-class",
+    "clase b": "b-class",
+    "land cruiser": "land-cruiser",
+}
+
+
+def _marca_slug(marca: str) -> str:
+    raw = marca.strip().lower()
+    return MARCA_SLUG_ALIAS.get(raw, _slug(marca))
+
+
+def _modelo_slug(modelo: str) -> str:
+    raw = modelo.strip().lower()
+    return MODELO_SLUG_ALIAS.get(raw, _slug(modelo))
+
+
 # =========================================================
 # Dubizzle — Playwright + __NEXT_DATA__
 # =========================================================
 def _dubizzle_url(search: dict[str, Any], page: int = 1) -> str:
-    marca = _slug(search["marca"])
-    modelo = _slug(search["modelo"])
+    marca = _marca_slug(search["marca"])
+    modelo = _modelo_slug(search["modelo"])
     base = f"https://uae.dubizzle.com/motors/used-cars/{marca}/{modelo}/"
     params = (
         f"?price__gte={search['precio_min_aed']}"
@@ -103,6 +131,7 @@ def _normalize_spec(label: str | None) -> str | None:
 def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[dict]:
     out: list[dict] = []
     wanted_specs: set[str] = {s for s in (search.get("especificaciones") or []) if s}
+    descartes_spec: dict[str, int] = {}
     for h in hits:
         try:
             url_field = h.get("absolute_url")
@@ -132,6 +161,9 @@ def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[
 
             # Filtro por specs configuradas
             if wanted_specs and (spec_key is None or spec_key not in wanted_specs):
+                # Contador para visibilidad: qué spec teníamos descartando
+                k = spec_key or "unknown"
+                descartes_spec[k] = descartes_spec.get(k, 0) + 1
                 continue
 
             out.append({
@@ -148,6 +180,8 @@ def _build_listings_from_hits(hits: list[dict], search: dict[str, Any]) -> list[
         except Exception as e:
             log.debug("Dubizzle hit skip: %s", e)
             continue
+    if descartes_spec:
+        log.info("Dubizzle: descartados por specs (no en %s): %s", sorted(wanted_specs), descartes_spec)
     return out
 
 
