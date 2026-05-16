@@ -102,7 +102,18 @@ def _run_search(search: dict[str, Any], settings: dict[str, Any], costes: dict[s
             desglose=eva["desglose"],
             stats_es=spain,
         )
-        tg.enviar(mensaje, foto_url=lst.get("foto_url") if get_telegram_config().get("enviar_foto") else None)
+        enviado_ok = tg.enviar(
+            mensaje,
+            foto_url=lst.get("foto_url") if get_telegram_config().get("enviar_foto") else None,
+        )
+        if enviado_ok:
+            try:
+                from config_loader import _client  # type: ignore
+                _client().table("dubai_deals").update({"enviado_telegram": True}).eq(
+                    "url", lst["url"]
+                ).execute()
+            except Exception:
+                log.exception("No se pudo marcar enviado_telegram")
         stats["deals"] += 1
     return stats
 
