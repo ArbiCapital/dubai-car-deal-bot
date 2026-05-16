@@ -278,6 +278,23 @@ def _passes_filters(item: dict, search: dict) -> bool:
     return True
 
 
+DETAIL_PRICE_RE = re.compile(r'"price"\s*:\s*"?(\d{4,})"?')
+
+
+def _dubicars_verify_price(detail_url: str) -> int | None:
+    """Fetcheo de detail page para sacar el precio real (más fiable que el del list)."""
+    html = _dubicars_fetch(detail_url)
+    if not html:
+        return None
+    # Busca el primer "price": ... grande dentro de la página
+    candidates = [int(m.group(1)) for m in DETAIL_PRICE_RE.finditer(html)]
+    # Filtra valores que parecen precio total real (> 20k AED)
+    real = [c for c in candidates if c >= 20000]
+    if not real:
+        return None
+    return min(real)  # el más bajo "real" suele ser el price total
+
+
 def scrape_dubicars(search: dict[str, Any]) -> list[dict[str, Any]]:
     url = _dubicars_url(search)
     log.info("DubiCars URL: %s", url)
@@ -285,10 +302,33 @@ def scrape_dubicars(search: dict[str, Any]) -> list[dict[str, Any]]:
     if not html:
         return []
     listings = _dubicars_parse_jsonld(html, search)
-    log.info("DubiCars: %d listings antes de filtro", len(listings))
+    log.info("DubiCars: %d listings raw", len(listings))
+
+    # Skip URLs que son EMI bait (precio listado es la cuota mensual)
+    listings = [l for l in listings if "per-month" not in l["url"] and "-pm-" not in l["url"]]
+    log.info("DubiCars: %d tras drop EMI", len(listings))
+
+    # Filtro precio/año/km usando el precio del list page
     filtered = [l for l in listings if _passes_filters(l, search)]
-    log.info("DubiCars: %d listings tras filtro", len(filtered))
-    return filtered
+    log.info("DubiCars: %d tras filtro", len(filtered))
+
+    # Verificación: SIEMPRE confirmar el precio contra detail page.
+    # El JSON-LD del list page no es fiable desde algunas IPs (GH Actions runners).
+    verified: list[dict[str, Any]] = []
+    for l in filtered:
+        real = _dubicars_verify_price(l["url"])
+        time.sleep(random.uniform(0.3, 0.7))
+        if not real:
+            log.info("DubiCars: no se pudo verificar %s, skip", l["url"].rsplit("/", 1)[-1][:50])
+            continue
+        if real != int(l["precio_aed"]):
+            log.info("DubiCars: precio %s→%s en %s", int(l["precio_aed"]), real, l["url"].rsplit("/", 1)[-1][:40])
+            l["precio_aed"] = float(real)
+        if _passes_filters(l, search):
+            verified.append(l)
+
+    log.info("DubiCars: %d listings finales", len(verified))
+    return verified
 
 
 # =========================================================
