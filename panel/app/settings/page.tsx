@@ -30,16 +30,11 @@ export default function SettingsPage() {
     if (!global) return;
     setRefreshingFx(true);
     try {
-      // Frankfurter es CORS-friendly
-      let rate: number | null = null;
-      const r1 = await fetch("https://api.frankfurter.app/latest?from=AED&to=EUR").then((r) => r.json());
-      if (r1?.rates?.EUR) rate = r1.rates.EUR;
-      if (!rate) {
-        const r2 = await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR").then((r) => r.json());
-        if (r2?.rates?.EUR) rate = r2.rates.EUR / 3.6725;
-      }
-      if (!rate) throw new Error("No se pudo obtener el tipo");
-      setGlobal({ ...global, aed_to_eur: Number(rate.toFixed(6)) });
+      const r = await fetch("/api/fx");
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      const rate = data.aed_to_eur as number;
+      setGlobal({ ...global, aed_to_eur: rate });
       setToast({ kind: "ok", msg: `Tipo actualizado: 1 AED = ${rate.toFixed(4)} €` });
       setTimeout(() => setToast(null), 4000);
     } catch (e: any) {
